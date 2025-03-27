@@ -96,6 +96,8 @@ helm install ztunnel istio/ztunnel --kube-context=${CLUSTER1} -n istio-system --
 
 echo "##### Installing metrics server #####"
 
+helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/
+helm repo update
 helm --kube-context ${CLUSTER1} -n kube-system upgrade --install metrics-server metrics-server/metrics-server --set args="{--kubelet-insecure-tls=true}" 
 
 echo "##### Installing Kiali #####"
@@ -484,6 +486,33 @@ kubectl --context ${CLUSTER1} patch deployment in-mesh -n httpbin --type='json' 
 kubectl --context ${CLUSTER1} patch deployment in-mesh -n httpbin -p '{"spec": {"template": {"spec": {"containers": [{"name": "in-mesh", "ports": [{"name": "http", "containerPort": 8080}]}]}}}}'
 kubectl --context ${CLUSTER1} patch deployment in-ambient -n httpbin --type='json' -p='[{"op": "remove", "path": "/spec/template/spec/containers/0/ports/0"}]'
 kubectl --context ${CLUSTER1} patch deployment in-ambient -n httpbin -p '{"spec": {"template": {"spec": {"containers": [{"name": "in-ambient", "ports": [{"name": "http", "containerPort": 8080}]}]}}}}'
+echo "##### Waiting for all deployments to be ready #####"
+
+# Define namespaces containing critical components
+NAMESPACES_TO_CHECK="kube-system monitoring k6-operator-system istio-system kiali-operator httpbin"
+TIMEOUT="10m" # Adjust timeout as needed (e.g., 600s)
+
+for ns in $NAMESPACES_TO_CHECK; do
+  echo "--> Waiting for Deployments in namespace '$ns' to be Available..."
+  # Get deployment names first, as 'wait --all' might include deployments being terminated
+  DEPLOYMENTS=$(kubectl --context ${CLUSTER1} get deployments -n "$ns" -o jsonpath='{.items[*].metadata.name}')
+  if [ -n "$DEPLOYMENTS" ]; then
+      # Wait for each deployment individually
+      for deploy in $DEPLOYMENTS; do
+          echo "  --> Waiting for Deployment '$deploy'..."
+          if ! kubectl --context ${CLUSTER1} wait deployment "$deploy" --for=condition=Available=true -n "$ns" --timeout=${TIMEOUT}; then
+              echo "Error: Deployment '$deploy' in namespace '$ns' did not become Available within ${TIMEOUT}."
+              kubectl --context ${CLUSTER1} get pods -n "$ns" # Show pod status on failure
+              kubectl --context ${CLUSTER1} describe deployment "$deploy" -n "$ns" # Describe deployment on failure
+              exit 1 # Exit the script if deployment isn't ready
+          fi
+      done
+  else
+      echo "  --> No deployments found in namespace '$ns'."
+  fi
+done
+
+echo "All relevant Deployments are Available."
 
 echo "##### Execute baseline perftest #####"
 
