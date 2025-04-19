@@ -1,5 +1,7 @@
 # Istio Ambient Mesh Performance Demo (KubeCon Europe 2025)
 
+https://www.youtube.com/watch?v=oi4TpxuIYXk
+
 This repository contains the scripts and configuration to run a performance comparison demo showcasing Istio's Ambient Mesh mode versus the traditional sidecar model and a baseline without Istio. The demo was designed for/presented at KubeCon Europe.
 
 The demo utilizes:
